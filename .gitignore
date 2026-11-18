@@ -1,2 +1,8 @@
 .DS_Store
 Thumbs.db
+
+# Private notes, kept on this computer only
+NOTES.md
+
+# Raw video/image files to be compressed for the site (never pushed)
+_media/

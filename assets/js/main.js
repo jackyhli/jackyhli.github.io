@@ -16,6 +16,8 @@ const SITE = {
   formspree: "https://formspree.io/f/mkjrjjer", // your Formspree form. Blank = form opens the visitor's email app.
 };
 
+const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 // ---------- Email helpers (anti-scraping) ----------
 const emailAddr = () => (SITE.email && SITE.email.user ? SITE.email.user + "\u0040" + SITE.email.domain : "");
 const emailShown = () =>
@@ -68,6 +70,28 @@ if (tcEl) {
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+}
+
+// ---------- Scroll playhead: red bar on the top bar's bottom edge ----------
+// Uses the layout viewport height (stable while iOS Safari's toolbars slide in and out)
+// and clamps to 0..1, so the bar never jumps during toolbar changes or overscroll bounce.
+const playhead = document.querySelector(".playhead");
+if (playhead) {
+  let queued = false;
+  const update = () => {
+    queued = false;
+    const doc = document.documentElement;
+    const range = doc.scrollHeight - doc.clientHeight;
+    const y = window.scrollY;
+    let p = range > 4 ? y / range : 0;
+    if (y + window.innerHeight >= doc.scrollHeight - 2) p = range > 4 ? 1 : 0;
+    playhead.style.setProperty("--p", Math.min(1, Math.max(0, p)).toFixed(4));
+  };
+  const queue = () => { if (!queued) { queued = true; requestAnimationFrame(update); } };
+  window.addEventListener("scroll", queue, { passive: true });
+  window.addEventListener("resize", queue);
+  window.addEventListener("load", queue);
+  update();
 }
 
 // ---------- Contact form ----------
@@ -160,7 +184,7 @@ if (form) {
 
 // ---------- Videos (dailies) ----------
 const DAILY_LIST =
-  typeof DAILIES !== "undefined" && Array.isArray(DAILIES) ? DAILIES.filter((d) => d && d.url && d.title) : [];
+  typeof DAILIES !== "undefined" && Array.isArray(DAILIES) ? DAILIES.filter((d) => d && (d.url || d.video || d.image) && d.title) : [];
 const hasDailies = DAILY_LIST.length > 0;
 document.querySelectorAll("[data-needs-dailies]").forEach((el) => { if (!hasDailies) el.hidden = true; });
 document.querySelectorAll("[data-needs-no-dailies]").forEach((el) => { if (hasDailies) el.hidden = true; });
@@ -169,7 +193,7 @@ const longList = document.querySelector("[data-dailies-long-list]");
 const shortList = document.querySelector("[data-dailies-short-list]");
 if (longList && shortList) {
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const PLATFORM_LABEL = { youtube: "YouTube", instagram: "Instagram", tiktok: "TikTok", vimeo: "Vimeo", drive: "Original", link: "Link" };
+  const PLATFORM_LABEL = { youtube: "YouTube", instagram: "Instagram", tiktok: "TikTok", vimeo: "Vimeo", drive: "Original", file: "Original", image: "Still", link: "Link" };
 
   const youtubeId = (u) => {
     const m = u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/);
@@ -210,26 +234,62 @@ if (longList && shortList) {
   const dialog = document.querySelector("[data-screening]");
   const frame = document.querySelector("[data-screening-frame]");
   const dTitle = document.querySelector("[data-screening-title]");
-  const openPlayer = (src, title, ratio) => {
+  // kind: "embed" (YouTube/Vimeo/Drive iframe), "video" (a file on this site) or "image"
+  const openPlayer = (kind, src, title, ratio, poster) => {
     frame.innerHTML = "";
     dialog.style.setProperty("--ar", ratio);
-    const iframe = document.createElement("iframe");
-    iframe.src = src;
-    iframe.title = title;
-    iframe.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
-    iframe.allowFullscreen = true;
-    frame.appendChild(iframe);
+    let el;
+    if (kind === "video") {
+      el = document.createElement("video");
+      el.src = src;
+      if (poster) el.poster = poster;
+      el.controls = true;
+      el.autoplay = true;
+      el.playsInline = true;
+      el.preload = "auto";
+    } else if (kind === "image") {
+      el = document.createElement("img");
+      el.src = src;
+      el.alt = title;
+    } else {
+      el = document.createElement("iframe");
+      el.src = src;
+      el.title = title;
+      el.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+      el.allowFullscreen = true;
+    }
+    frame.appendChild(el);
     dTitle.textContent = title;
     dialog.showModal();
+    // pause the silent previews while the player is open
+    document.querySelectorAll("video.daily-loop").forEach((v) => v.pause());
   };
-  dialog.addEventListener("close", () => { frame.innerHTML = ""; });
+  dialog.addEventListener("close", () => {
+    frame.innerHTML = "";
+    document.querySelectorAll("video.daily-loop[data-inview]").forEach((v) => v.play().catch(() => {}));
+  });
   dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
   document.querySelector("[data-screening-close]").addEventListener("click", () => dialog.close());
 
   let longCount = 0;
   let shortCount = 0;
+  // Silent looping previews: play only while on screen
+  const loopIO = "IntersectionObserver" in window && !REDUCED
+    ? new IntersectionObserver((entries) => entries.forEach((en) => {
+        const v = en.target;
+        if (en.isIntersecting) {
+          v.dataset.inview = "";
+          if (v.preload === "none") v.preload = "auto";
+          if (!dialog.open) v.play().catch(() => {});
+        } else {
+          delete v.dataset.inview;
+          v.pause();
+        }
+      }), { rootMargin: "120px 0px", threshold: 0.25 })
+    : null;
+
   DAILY_LIST.forEach((d, i) => {
-    const platform = platformOf(d.url);
+    const platform = d.video ? "file" : d.image ? "image" : platformOf(d.url);
     const yt = platform === "youtube" ? youtubeId(d.url) : null;
     const vm = platform === "vimeo" ? vimeoId(d.url) : null;
     const dr = platform === "drive" ? driveId(d.url) : null;
@@ -243,7 +303,7 @@ if (longList && shortList) {
     const card = make("a", "daily " + (isShort ? "daily--short" : "daily--long"));
     card.style.setProperty("--ar", ratio.toFixed(4));
     if (/^still$/i.test(d.source || "")) card.classList.add("daily--still");
-    card.href = d.url;
+    card.href = d.video || d.image || d.url;
     card.target = "_blank";
     card.rel = "noopener";
 
@@ -254,11 +314,26 @@ if (longList && shortList) {
       return ph;
     };
     const src =
-      d.thumb ||
+      d.thumb || d.poster || (d.image && !d.video ? d.image : "") ||
       (yt ? "https://i.ytimg.com/vi/" + yt + "/hqdefault.jpg"
         : dr ? "https://lh3.googleusercontent.com/d/" + dr + "=w" + (isShort ? 600 : 960)
         : "");
-    if (src) {
+    if (d.video) {
+      // a file on this site: a silent, looping preview right in the card
+      const v = make("video", "daily-loop");
+      v.muted = true;
+      v.defaultMuted = true;
+      v.loop = true;
+      v.playsInline = true;
+      v.setAttribute("playsinline", "");
+      v.setAttribute("muted", "");
+      v.preload = "none";
+      if (src) v.poster = src;
+      v.src = d.preview || d.video;
+      v.setAttribute("aria-hidden", "true");
+      thumb.appendChild(v);
+      if (loopIO) loopIO.observe(v);
+    } else if (src) {
       const img = make("img");
       img.src = src;
       img.alt = "";
@@ -283,17 +358,18 @@ if (longList && shortList) {
     meta.appendChild(make("span", "daily-title", d.title));
     card.appendChild(meta);
 
-    const embed = yt
+    const embed = d.video || d.image ? null : yt
       ? "https://www.youtube-nocookie.com/embed/" + yt + "?autoplay=1&rel=0"
       : vm ? "https://player.vimeo.com/video/" + vm + "?autoplay=1"
       : dr ? "https://drive.google.com/file/d/" + dr + "/preview"
       : null;
-    if (embed) {
-      card.setAttribute("aria-label", "Play " + d.title);
+    const kind = d.video ? "video" : d.image ? "image" : embed ? "embed" : null;
+    if (kind) {
+      card.setAttribute("aria-label", (kind === "image" ? "View " : "Play ") + d.title);
       card.addEventListener("click", (e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; // let new-tab clicks through
         e.preventDefault();
-        openPlayer(embed, d.title, ratio.toFixed(4));
+        openPlayer(kind, d.video || d.image || embed, d.title, ratio.toFixed(4), src);
       });
     } else {
       card.setAttribute("aria-label", d.title + " (opens in a new tab)");
@@ -311,7 +387,6 @@ if (longList && shortList) {
 }
 
 // ---------- Home stage: cursor light, autofocus reticle, lens aberration (mouse only) ----------
-const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const stage = document.querySelector("[data-stage]");
 if (stage && !REDUCED && window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
   const reticle = stage.querySelector("[data-reticle]");
@@ -522,6 +597,14 @@ if (stillsCol) {
   schedule();
 }
 
+// Load the other camera angles once the page has finished loading and the browser is idle
+window.addEventListener("load", () => {
+  const later = window.requestIdleCallback || ((fn) => setTimeout(fn, 600));
+  later(() => document.querySelectorAll("img.cam[data-src]").forEach((img) => {
+    if (!img.getAttribute("src")) img.src = img.dataset.src;
+  }));
+});
+
 // ---------- Projects: camera angles (thumbnail strip, arrows, swipe, tap) ----------
 document.querySelectorAll(".cam-switch").forEach((sw) => {
   const media = sw.closest(".feature-media");
@@ -530,8 +613,10 @@ document.querySelectorAll(".cam-switch").forEach((sw) => {
   const btns = [...sw.querySelectorAll("[data-cam-btn]")];
   const counter = frame.querySelector("[data-cam-i]");
   let cur = 0;
+  const load = (img) => { if (img.dataset.src && !img.getAttribute("src")) img.src = img.dataset.src; };
   const show = (i) => {
     cur = (i + cams.length) % cams.length;
+    load(cams[cur]);
     cams.forEach((c, k) => c.classList.toggle("is-on", k === cur));
     btns.forEach((b, k) => {
       b.classList.toggle("is-on", k === cur);
