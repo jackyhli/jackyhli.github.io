@@ -552,12 +552,31 @@ if (stillsCol) {
 
   const sheet = document.querySelector("[data-sheet]");
   const sheetGrid = document.querySelector("[data-sheet-grid]");
+  // Contact-sheet photos sit in a two-column (CSS columns) layout. Safari's built-in lazy
+  // loading misplaces images inside column layouts, so some never load until tapped.
+  // Instead, watch the whole section and load every sheet photo once it gets close.
+  let sheetNear = !("IntersectionObserver" in window);
+  const loadSheet = () => {
+    if (!sheetGrid) return;
+    sheetGrid.querySelectorAll("img[data-src]").forEach((img) => {
+      if (!img.getAttribute("src")) img.src = img.dataset.src;
+      img.loading = "eager";
+    });
+  };
+  if (sheet && !sheetNear) {
+    const sheetIO = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { sheetNear = true; loadSheet(); sheetIO.disconnect(); }
+    }, { rootMargin: "900px 0px" });
+    sheetIO.observe(sheet);
+  }
   const reveal = (fig) => {
     const img = fig.querySelector("img");
-    if (!img.getAttribute("src")) {
-      img.loading = "lazy";
+    const inSheet = sheetGrid && fig.parentElement === sheetGrid;
+    if (!img.getAttribute("src") && (!inSheet || sheetNear)) {
+      img.loading = inSheet ? "eager" : "lazy";
       img.src = img.dataset.src;
     }
+    if (inSheet && sheetNear) img.loading = "eager";
     if (fig.hidden) {
       fig.hidden = false;
       fig.classList.add("is-new");

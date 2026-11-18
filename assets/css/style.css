@@ -1163,6 +1163,9 @@ html:has(dialog[open]) { overflow: hidden; }
     background: var(--bg);
   }
   .js .monitor { padding-top: var(--hud-h, 61px); }
+  /* Keep the full-screen grain overlay off the top edge, so the top bar is the only fixed
+     layer there and Safari paints the strip behind the clock in its colour. */
+  .js body::after { top: var(--hud-h, 61px); }
 
   /* Short-form videos: two-column grid, every card fully visible */
   .reel-strip { padding: 0 12px; }
