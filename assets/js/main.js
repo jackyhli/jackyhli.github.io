@@ -72,6 +72,15 @@ if (tcEl) {
   requestAnimationFrame(tick);
 }
 
+// ---------- Phones: the top bar is fixed, so reserve its exact height ----------
+const hudTop = document.querySelector(".hud-top");
+if (hudTop) {
+  const setHud = () => document.documentElement.style.setProperty("--hud-h", hudTop.offsetHeight + "px");
+  setHud();
+  if ("ResizeObserver" in window) new ResizeObserver(setHud).observe(hudTop);
+  else window.addEventListener("resize", setHud);
+}
+
 // ---------- Scroll playhead: red bar on the top bar's bottom edge ----------
 // Uses the layout viewport height (stable while iOS Safari's toolbars slide in and out)
 // and clamps to 0..1, so the bar never jumps during toolbar changes or overscroll bounce.

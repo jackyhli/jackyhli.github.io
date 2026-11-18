@@ -141,6 +141,8 @@ em, .it { font-style: italic; }
   text-transform: uppercase;
 }
 .hud-top { position: relative; border-bottom: 1px solid var(--line); }
+/* in-page links (like Work → Projects) land below the pinned top bar */
+.js { scroll-padding-top: calc(var(--hud-h, 61px) + 16px); }
 .hud-bottom { margin-top: auto; border-top: 1px solid var(--line); font-size: 0.6875rem; color: var(--dim); }
 
 .rec {
@@ -1146,25 +1148,21 @@ html:has(dialog[open]) { overflow: hidden; }
   /* Phones: the monitor goes edge to edge, so the pinned top bar covers the full width */
   body { padding: 0; }
   .monitor { border-width: 0; border-radius: 0; }
+  /* The top bar is position: fixed (not sticky) on phones. Safari on iOS 26 only paints the
+     strip behind the clock solid when a fixed element with a background touches the top edge;
+     otherwise the page shows through it while scrolling. --hud-h (set by main.js) reserves its height. */
   .js .hud-top {
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
+    right: 0;
     z-index: 20;
     flex-wrap: nowrap;
     padding-top: 8px;
     padding-bottom: 8px;
     background: var(--bg);
   }
-  /* solid fill above the bar, so nothing shows through during overscroll or under the status bar */
-  .js .hud-top::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 100%;
-    height: 120px;
-    background: var(--bg);
-  }
+  .js .monitor { padding-top: var(--hud-h, 61px); }
 
   /* Short-form videos: two-column grid, every card fully visible */
   .reel-strip { padding: 0 12px; }
